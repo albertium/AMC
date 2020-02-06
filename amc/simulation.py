@@ -68,7 +68,7 @@ class BlackScholes(Simulator):
 
     def _simulate_states(self, tenor: float, num_steps: int, num_paths: int) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         dt = tenor / num_steps
-        rands = RNGenerator(antithetic=False).generate(num_steps, num_paths)
+        rands = RNGenerator(antithetic=False, moment_matching=True).generate(num_steps, num_paths)
         rands = (self.interest - self.dividend - 0.5 * self.volatility ** 2) * dt + self.volatility * np.sqrt(dt) * rands
         underlying = self.spot * np.exp(np.cumsum(rands, axis=0))
         numeraire = np.tile(np.exp(self.interest * dt), (num_steps, num_paths))

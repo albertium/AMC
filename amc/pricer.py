@@ -28,8 +28,7 @@ class Pricer:
                     # last values here is already deflated
                     continuation = self.fitter.fit_predict(values[t_idx - 1, s_idx], time_slice, security.factors)
 
-                raw = security.backprop(time_slice, continuation)
-                # deflate current value
-                values[t_idx, s_idx] = (raw if raw is not None else values[t_idx - 1, s_idx]) / time_slice.numeraire
+                raw = security.backprop(time_slice, values[t_idx - 1, s_idx], continuation)
+                values[t_idx, s_idx] = raw / time_slice.numeraire  # deflate current value
 
         return np.mean(values[-1], axis=1)

@@ -13,17 +13,22 @@ class Fitter(abc.ABC):
         pass
 
     def fit_predict(self, last_values: np.ndarray, time_slice: TimeSlice, factors: List[str]):
-        X = np.hstack([time_slice.states(factor) for factor in factors])
-        X = preprocessing.scale(X)
+        X = np.vstack([time_slice.state(factor) for factor in factors]).T
         return self._fit_predict(X, last_values)
 
 
 class LASSOFitter(Fitter):
     def __init__(self, order: int = 3):
         self.transformer = preprocessing.PolynomialFeatures(order)
-        self.fitter = linear_model.Lasso(alpha=0.001)
+        self.fitter = linear_model.Lasso(alpha=0.01)
 
     def _fit_predict(self, X, y) -> np.ndarray:
+        preprocessing.scale(X, axis=0, copy=False)
         X = self.transformer.fit_transform(X)
-        self.fitter.fit(X, y)
+        preprocessing.scale(X, axis=0, copy=False)
+
+        X_subset = X[y > 0]
+        y_subset = y[y > 0]
+
+        self.fitter.fit(X_subset, y_subset)
         return self.fitter.predict(X)

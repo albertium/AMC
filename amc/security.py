@@ -13,7 +13,7 @@ class Security(abc.ABC):
         self.factors = factors
 
     @abc.abstractmethod
-    def backprop(self, time_slice: TimeSlice, continuation: np.ndarray) -> Union[None, np.ndarray]:
+    def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> Union[None, np.ndarray]:
         pass
 
 
@@ -23,8 +23,20 @@ class EuropeanOption(Security):
         self.asset = asset
         self.strike = strike
 
-    def backprop(self, time_slice: TimeSlice, continuation: np.ndarray) -> Union[None, np.ndarray]:
+    def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> Union[None, np.ndarray]:
         if time_slice.time == self.tenor:
             return np.maximum(time_slice.state(self.asset) - self.strike, 0)
-        return None
+        return last_values
 
+
+class AmericanOption(Security):
+    def __init__(self, asset: str, strike: float, tenor: float):
+        super(AmericanOption, self).__init__(tenor, factors=[asset], need_continuation=True)
+        self.asset = asset
+        self.strike = strike
+
+    def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> Union[None, np.ndarray]:
+        intrinsic_values = np.maximum(time_slice.state(self.asset) - self.strike, 0)
+        if time_slice.time == self.tenor:
+            return intrinsic_values
+        return np.where(continuation > intrinsic_values, last_values, intrinsic_values)
