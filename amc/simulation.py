@@ -28,10 +28,14 @@ class RNGenerator:
         self.antithetic = antithetic
 
     def generate(self, num_steps: int, num_paths: int):
-        rands = np.random.normal(0, 1, (num_steps, num_paths))
-
         if self.antithetic:
-            pass
+            if num_paths % 2 != 0:
+                raise ValueError('Number of paths should be even when using antithetic')
+
+            rands = np.random.normal(0, 1, (num_steps, int(num_paths / 2)))
+            rands = np.hstack((rands, -rands))
+        else:
+            rands = np.random.normal(0, 1, (num_steps, num_paths))
 
         if self.moment_matching:
             preprocessing.scale(rands, axis=1, copy=False)
@@ -64,7 +68,7 @@ class BlackScholes(Simulator):
 
     def _simulate_states(self, tenor: float, num_steps: int, num_paths: int) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         dt = tenor / num_steps
-        rands = RNGenerator().generate(num_steps, num_paths)
+        rands = RNGenerator(antithetic=False).generate(num_steps, num_paths)
         rands = (self.interest - self.dividend - 0.5 * self.volatility ** 2) * dt + self.volatility * np.sqrt(dt) * rands
         underlying = self.spot * np.exp(np.cumsum(rands, axis=0))
         numeraire = np.tile(np.exp(self.interest * dt), (num_steps, num_paths))
