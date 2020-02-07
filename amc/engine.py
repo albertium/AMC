@@ -21,14 +21,15 @@ class PricingEngine:
         # price securities on each time step
         for t_idx, time_slice in enumerate(slices):
             for s_idx, security in enumerate(self.securities):
+                prev = values[t_idx - 1, s_idx]
                 # estimate continuation value
                 if t_idx == 0 or not security.need_continuation:
                     continuation = None
                 else:
-                    # last values here is already deflated
-                    continuation = self.fitter.fit_predict(values[t_idx - 1, s_idx], time_slice, security.factors)
+                    mask = security.mask(time_slice) if security.mask is not None else None
+                    continuation = self.fitter.fit_predict(prev, time_slice, security.factors, mask)
 
-                raw = security.backprop(time_slice, values[t_idx - 1, s_idx], continuation)
+                raw = security.backprop(time_slice, prev, continuation)
                 values[t_idx, s_idx] = raw / time_slice.numeraire  # deflate current value
 
         return np.mean(values[-1], axis=1)
