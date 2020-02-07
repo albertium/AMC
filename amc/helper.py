@@ -13,6 +13,10 @@ def get_european_call(S: float, K: float, r: float, q: float, sig: float, T: flo
     return np.exp(-q * T) * S * norm.cdf(d1) - np.exp(-r * T) * K * norm.cdf(d2)
 
 
+def get_european_put(S: float, K: float, r: float, q: float, sig: float, T: float):
+    return get_european_call(S, K, r, q, sig, T) + np.exp(-r * T) * K - np.exp(-q * T) * S
+
+
 def get_american_call(S0, vol, T, K=40, M=50, I=4096, r=0.06):
     np.random.seed(150000)  # fix the seed for every valuation
     dt = T / M  # time interval

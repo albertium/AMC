@@ -7,7 +7,7 @@ from .simulation import Simulator
 from .fitter import Fitter
 
 
-class Pricer:
+class PricingEngine:
     def __init__(self, securities: List[Security], model: Simulator, fitter: Union[None, Fitter]):
         self.securities = securities
         self.tenor = max(security.tenor for security in securities)
