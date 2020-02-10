@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     # pricing
     # ans = engine.price(num_steps=M, num_paths=N)
-    real = helper.get_european_put(S, K, r, q, sig, T)
+    real = helper.get_european_put_bs(S, K, r, q, sig, T)
 
     util.get_pricing_stats(engine, real, M, N, repeat=20)
 
