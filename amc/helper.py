@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 from sklearn import linear_model
+import matplotlib.pyplot as plt
 from typing import Union, Callable
 
 
@@ -126,3 +127,21 @@ def calc_implied_vols_from_prices(data: pd.DataFrame):
     data['imp_vol_ask'] = np.where(data.strike > data.forward, imp_vol_ask_c, imp_vol_ask_p)
     return data[['date', 't_exp', 'strike', 'imp_vol_bid', 'imp_vol_ask', 'forward', 'df']]\
         .sort_values(by=['date', 't_exp', 'strike'])
+
+
+def plot_implied_vols(imp_vols: pd.DataFrame, n_cols=4):
+    imp_vols = imp_vols.copy()
+    imp_vols['moneyness'] = np.log(imp_vols.strike / imp_vols.forward)
+    maturities = imp_vols.t_exp.unique()
+    n_rows = int(np.ceil(len(maturities) / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 6))
+    fig.tight_layout(pad=3)
+    axes = axes.flatten()[: len(maturities)]
+
+    for ax, (t_exp, group) in zip(axes, imp_vols.groupby(by=['t_exp'])):
+        group.plot('moneyness', 'imp_vol_bid', s=2, ax=ax, kind='scatter', c='blue')
+        group.plot('moneyness', 'imp_vol_ask', s=2, ax=ax, kind='scatter', c='orange')
+        ax.set_title(f'T={t_exp:.4f}')
+        ax.set_ylabel('Imp Vol')
+
+    plt.show()
