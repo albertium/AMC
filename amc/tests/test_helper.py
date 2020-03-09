@@ -2,7 +2,7 @@
 import unittest
 import numpy as np
 from numpy.testing import assert_array_almost_equal
-from .helper import get_european_call, get_european_put, get_european_call_bs, get_european_put_bs, get_implied_vol_call
+from amc.helper import get_european_call, get_european_put, get_european_call_bs, get_european_put_bs, get_implied_vol_call
 
 
 class TestBlackScholes(unittest.TestCase):

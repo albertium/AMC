@@ -72,15 +72,27 @@ class Security(abc.ABC):
         pass
 
 
-class EuropeanOption(Security):
+class EuropeanOptionBase(Security):
     def __init__(self, payoff: Payoff, tenor: float):
-        super(EuropeanOption, self).__init__(tenor)
+        super(EuropeanOptionBase, self).__init__(tenor)
         self.payoff = payoff
 
     def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> Union[None, np.ndarray]:
         if time_slice.time == self.tenor:
             return self.payoff(time_slice)
         return last_values
+
+
+class EuropeanCall(EuropeanOptionBase):
+    def __init__(self, asset: str, strike: float, tenor: float):
+        payoff = CallPayoff(asset, strike)
+        super(EuropeanCall, self).__init__(payoff, tenor)
+
+
+class EuropeanPut(EuropeanOptionBase):
+    def __init__(self, asset: str, strike: float, tenor: float):
+        payoff = PutPayoff(asset, strike)
+        super(EuropeanPut, self).__init__(payoff, tenor)
 
 
 class AmericanOptionBase(Security):

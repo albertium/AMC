@@ -1,4 +1,5 @@
 
+import abc
 from typing import List, Union
 import numpy as np
 
@@ -7,11 +8,25 @@ from .simulation import Simulator
 from .fitter import Fitter
 
 
-class PricingEngine:
-    def __init__(self, securities: List[Security], model: Simulator, fitter: Union[None, Fitter]):
+class PricingEngine(abc.ABC):
+    def __init__(self, securities: List[Security], model: Simulator):
         self.securities = securities
         self.tenor = max(security.tenor for security in securities)
         self.model = model
+
+    @abc.abstractmethod
+    def price(self, num_steps: int, num_paths: Union[int, List]):
+        """
+        :param num_steps: number of time steps
+        :param num_paths: number of steps in states
+        :return:
+        """
+        pass
+
+
+class MonteCarloEngine(PricingEngine):
+    def __init__(self, securities: List[Security], model: Simulator, fitter: Union[None, Fitter] = None):
+        super(MonteCarloEngine, self).__init__(securities, model)
         self.fitter = fitter
 
     def price(self, num_steps: int, num_paths: int):

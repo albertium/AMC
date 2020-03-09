@@ -1,6 +1,6 @@
 
-from amc import PricingEngine
-from amc.security import EuropeanOption, AmericanPut, AmericanCall
+from amc.engine import MonteCarloEngine
+from amc.security import AmericanCall
 from amc.simulation import BlackScholes
 from amc.fitter import LASSOFitter
 from amc import helper, util
@@ -18,13 +18,13 @@ if __name__ == '__main__':
     sec = AmericanCall('stock', K, T)
     bs = BlackScholes(spot=S, interest=r, dividend=q, volatility=sig)
     lasso = LASSOFitter()
-    engine = PricingEngine([sec], model=bs, fitter=lasso)
+    engine = MonteCarloEngine([sec], model=bs, fitter=lasso)
 
     # pricing
     # ans = engine.price(num_steps=M, num_paths=N)
     real = helper.get_european_put_bs(S, K, r, q, sig, T)
 
-    util.get_pricing_stats(engine, real, M, N, repeat=20)
+    util.get_pricing_stats(engine, real, M, N, repeat=3)
 
     # print(ans)
     print(real)
