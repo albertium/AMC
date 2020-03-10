@@ -4,6 +4,8 @@ from typing import Tuple, Dict, List
 import numpy as np
 from sklearn import preprocessing
 
+from .pde import PDE1D
+
 
 class TimeSlice:
     def __init__(self, timestamp: float, states: Dict[str, np.ndarray]):
@@ -49,11 +51,11 @@ class Simulator(abc.ABC):
         pass
 
     def simulate_states(self, tenor: float, num_steps: int, num_paths: int) -> List[TimeSlice]:
-        timestamp, states = self._simulate_states(tenor, num_steps, num_paths)
+        timestamps, states = self._simulate_states(tenor, num_steps, num_paths)
 
         sim = []
-        for idx in range(len(timestamp)):
-            sim.append(TimeSlice(timestamp[idx], {k: v[idx] for k, v in states.items()}))
+        for idx in range(len(timestamps)):
+            sim.append(TimeSlice(timestamps[idx], {k: v[idx] if v.ndim > 1 else v for k, v in states.items()}))
         sim.reverse()
 
         return sim
@@ -73,3 +75,25 @@ class BlackScholes(Simulator):
         underlying = self.spot * np.exp(np.cumsum(rands, axis=0))
         numeraire = np.tile(np.exp(self.interest * dt), (num_steps, num_paths))
         return np.linspace(dt, tenor, num_steps), {'numeraire': numeraire, 'stock': underlying}
+
+
+class GridSimulator(Simulator):
+    def __init__(self, pde: PDE1D):
+        self.spot = pde.spot
+        self.atm_vol = pde.atm_vol
+        self.is_normal = pde.is_normal
+
+    def _simulate_states(self, tenor: float, num_steps: int, num_paths: int, std: float = 5) -> \
+            Tuple[np.ndarray, Dict[str, np.ndarray]]:
+        if self.is_normal:
+            deviation = std * self.atm_vol
+            lb = self.spot - deviation
+            ub = self.spot + deviation
+        else:  # exponential
+            deviation = np.exp(std * self.atm_vol)
+            lb = self.spot / deviation
+            ub = self.spot * deviation
+
+        dt = tenor / num_steps
+        underlying = np.linspace(lb, ub, num_paths)
+        return np.linspace(dt, tenor, num_steps), {'stock': underlying}
