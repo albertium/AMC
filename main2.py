@@ -8,17 +8,32 @@ from amc.helper import calc_implied_vols_from_prices, plot_implied_vols
 # plot_implied_vols(new)
 # print(new[new.t_exp < 0.006])
 
-import numpy as np
+class Base:
+    def __init__(self, tenor, abc):
+        self.mc = False
+        self.fd = False
+        self.tenor = tenor
 
-res1 = []
-res2 = []
-b = np.sqrt(0.6) / 2
-for _ in range(10000):
-    p = np.random.uniform(0.5 - b, 0.5 + b, 1)
-    res1.append(np.random.binomial(10, p))
-    res2.append(np.random.binomial(90, p) + res1[-1])
 
-res1 = np.array(res1)
-res2 = np.array(res2)
-res = np.hstack([res1, res2])
-print(np.corrcoef(res))
+class MC:
+    def __init__(self, *args, **kwargs):
+        super(MC, self).__init__(*args, **kwargs)
+        self.mc = True
+
+
+class FD:
+    def __init__(self, abc, *args, **kwargs):
+        print(abc)
+        super(FD, self).__init__(*args, **kwargs)
+        self.fd = True
+
+
+class Yes(MC, FD, Base):
+    def __init__(self):
+        super(Yes, self).__init__(tenor=10)
+
+
+yes = Yes()
+print(yes.fd)
+print(yes.mc)
+print(yes.tenor)

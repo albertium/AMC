@@ -62,12 +62,40 @@ class PutMask(MaskGenerator):
 class Security(abc.ABC):
     def __init__(self, tenor: float, factors: List[str] = None, need_continuation: bool = False,
                  mask: MaskGenerator = None):
+        self.support_mc = True  # TODO: should we have a separate mixin for MC?
+        self.support_fd = False
         self.tenor = tenor
         self.need_continuation = need_continuation
         self.mask = mask
         self.factors = factors
 
     @abc.abstractmethod
+    def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> np.ndarray:
+        pass
+
+
+class FiniteDifferenceMixin(abc.ABC):
+    def __init__(self):
+        super(FiniteDifferenceMixin, self).__init__()
+        self.support_fd = True
+
+    @abc.abstractmethod
+    def boundary(self, t: Union[float, np.ndarray],
+                 left_x: Union[float, np.ndarray],
+                 right_x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        pass
+
+
+class HeatSecurity(FiniteDifferenceMixin, Security):
+
+    def __init__(self, tenor: float):
+        super(HeatSecurity, self).__init__(tenor)
+        self.tenor = tenor
+
+    def boundary(self, t: Union[float, np.ndarray], left_x: Union[float, np.ndarray],
+                 right_x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        pass
+
     def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> np.ndarray:
         pass
 
