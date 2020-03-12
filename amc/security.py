@@ -1,6 +1,6 @@
 
 import abc
-from typing import List, Union
+from typing import List, Union, Tuple, Dict
 import numpy as np
 
 from .simulation import TimeSlice
@@ -75,29 +75,32 @@ class Security(abc.ABC):
 
 
 class FiniteDifferenceMixin(abc.ABC):
-    def __init__(self):
-        super(FiniteDifferenceMixin, self).__init__()
-        self.support_fd = True
+
+    def __init__(self, **kwargs):
+        # we should only support key parameters to enforce clearer code with mixin
+        super(FiniteDifferenceMixin, self).__init__(**kwargs)
 
     @abc.abstractmethod
-    def boundary(self, t: Union[float, np.ndarray],
-                 left_x: Union[float, np.ndarray],
-                 right_x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    def update_boundary(self, values: np.ndarray, time_slice: TimeSlice) -> None:
         pass
 
 
-class HeatSecurity(FiniteDifferenceMixin, Security):
+class HeatSecurity(Security, FiniteDifferenceMixin):
 
     def __init__(self, tenor: float):
         super(HeatSecurity, self).__init__(tenor)
         self.tenor = tenor
 
-    def boundary(self, t: Union[float, np.ndarray], left_x: Union[float, np.ndarray],
-                 right_x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        pass
+    def update_boundary(self, values: np.ndarray, time_slice: TimeSlice) -> None:
+        # TODO: how to handle 2D case in general?
+        t = time_slice.timestamp
+        x = time_slice.state('Heat')
+        values[0], values[-1] = np.exp(x[0] + self.tenor - t), np.exp(x[-1] + self.tenor - t)
 
     def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> np.ndarray:
-        pass
+        if time_slice.time == self.tenor:
+            return np.exp(time_slice.state('Heat'))
+        return last_values
 
 
 class EuropeanOptionBase(Security):

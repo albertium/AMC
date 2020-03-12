@@ -1,14 +1,31 @@
 
 import abc
 import numpy as np
-from typing import Union
+from typing import Union, List, Dict
 
 
-class PDE1D(abc.ABC):
-    def __init__(self, spot: float, atm_vol: float, is_normal: bool = False):
-        self.spot = spot  # for anchoring the range of grids
-        self.atm_vol = atm_vol  # for deciding the range of grids
+class Factor:
+    def __init__(self, name: str, spot: float, atm_vol: float, is_normal: bool = False):
+        self.name = name
+        self.spot = spot
+        self.atm_vol = atm_vol
         self.is_normal = is_normal
+
+
+class PDE(abc.ABC):
+    def __init__(self, factors: List[Factor]):
+        self.factors = factors
+
+    @abc.abstractmethod
+    def differential_operator(self, states: Dict[str, np.ndarray]):
+        pass
+
+
+class PDE1D(PDE):
+    def __init__(self, factor: Factor, is_dynamic_pde: bool = False):
+        super(PDE1D, self).__init__([factor])
+        self.is_dynamic_pde = is_dynamic_pde  # should we cache diff_op or not
+        self.lx = None
 
     @abc.abstractmethod
     def convection(self, x: np.ndarray) -> np.ndarray:
@@ -31,17 +48,25 @@ class PDE1D(abc.ABC):
         """
         pass
 
-    @abc.abstractmethod
-    def lx(self, x: np.ndarray, recalculate: bool = False) -> np.ndarray:
+    def differential_operator(self, states: Dict[str, np.ndarray]) -> np.ndarray:
         """
         Lx - differentiation operator. Equals Lx + Lxx
         This function is meant to cache result. For example, in the case of Black Scholes
         """
-        pass
+        x = states[self.factors[0].name]
+
+        if self.is_dynamic_pde or self.lx is None:
+            dx = x[1:] - x[: -1]
+            d2x = x[2:] - x[: -2]
+            convection = self.convection(x)
+            diffusion = self.diffusion(x)
+            reaction = self.reaction(x)
+            self.lx = PDE1D.generate_diff_operator(convection, diffusion, reaction, dx, d2x)
+        return self.lx
 
     @staticmethod
-    def get_lx(convection: np.ndarray, diffusion: np.ndarray, reaction: np.ndarray,
-               dx: np.ndarray, d2x: np.ndarray) -> np.ndarray:
+    def generate_diff_operator(convection: np.ndarray, diffusion: np.ndarray, reaction: np.ndarray,
+                               dx: np.ndarray, d2x: np.ndarray) -> np.ndarray:
         """
         get differentiation operator matrix (Lx + Lxx). Support non-uniform mesh
         See Iain Clark formula (7.56)
@@ -50,7 +75,7 @@ class PDE1D(abc.ABC):
         dxp = dx[: -1]
         lx = np.zeros([3, dx.shape[0] - 1])
         lx[0, :] = (2 * diffusion - convection * dxp) / dxi / d2x
-        lx[1, :] = (reaction + (convection * (dxp - dxi) - 2 * diffusion) / dxi / dxp)
+        lx[1, :] = reaction + (convection * (dxp - dxi) - 2 * diffusion) / dxi / dxp
         lx[2, :] = (2 * diffusion + convection * dxi) / dxp / d2x
         return lx
 
@@ -105,13 +130,27 @@ class PDE2D(abc.ABC):
         pass
 
 
+class HeatPDE(PDE1D):
+    def __init__(self):
+        heat = Factor(name='Heat', spot=0, atm_vol=2, is_normal=True)
+        super(HeatPDE, self).__init__(factor=heat, is_dynamic_pde=False)
+
+    def convection(self, x: np.ndarray) -> np.ndarray:
+        return 0
+
+    def diffusion(self, x: np.ndarray) -> np.ndarray:
+        return 1
+
+    def reaction(self, x: np.ndarray) -> Union[float, np.ndarray]:
+        return 0
+
+
 class BlackScholesPDE1D(PDE1D):
     def __init__(self, s: float, r: float, q: float, sig: float):
-        super(BlackScholesPDE1D, self).__init__(s, sig, is_normal=False)
+        super(BlackScholesPDE1D, self).__init__(s, sig, is_normal=False, is_dynamic_pde=False)
         self.r = r
         self.carry = r - q
         self.var = sig ** 2
-        self.lx = None
 
     def convection(self, x: np.ndarray) -> np.ndarray:
         return self.carry * x
@@ -121,16 +160,6 @@ class BlackScholesPDE1D(PDE1D):
 
     def reaction(self, x: np.ndarray) -> Union[float, np.ndarray]:
         return self.r
-
-    def lx(self, x: np.ndarray, recalculate: bool = False) -> np.ndarray:
-        if self.lx is None:
-            dx = x[1:] - x[: -1]
-            d2x = x[2:] - x[: -2]
-            convection = self.convection(x)
-            diffusion = self.diffusion(x)
-            reaction = self.reaction(x)
-            self.lx = PDE1D.get_lx(convection, diffusion, reaction, dx, d2x)
-        return self.lx
 
 
 class BlackScholesPDE2D(PDE2D):

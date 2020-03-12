@@ -1,17 +1,17 @@
 
 import abc
-from typing import List, Union
+from typing import List, Union, Dict
 import numpy as np
 from scipy.linalg import solve_banded
 
-from .security import Security
-from .simulation import Simulator, GridSimulator
+from .security import Security, FiniteDifferenceMixin
+from .simulation import Simulator, Grid, FiniteDifferenceGrid
 from .fitter import Fitter
-from .pde import PDE1D
+from .pde import PDE
 
 
 class PricingEngine(abc.ABC):
-    def __init__(self, securities: List[Security], model: Simulator):
+    def __init__(self, securities: List[Security], model: Grid):
         self.securities = securities
         self.tenor = max(security.tenor for security in securities)
         self.model = model
@@ -112,23 +112,21 @@ class FiniteDifferenceEngine(PricingEngine):
     """
     only price 1D PDE for now
     """
-    def __init__(self, security, pde: PDE1D, scheme: FiniteDifferenceScheme):
-        super(FiniteDifferenceEngine, self).__init__([security], GridSimulator(pde))
+    def __init__(self, security: Security, pde: PDE, scheme: FiniteDifferenceScheme):
+        if not isinstance(security, FiniteDifferenceMixin):
+            raise RuntimeError('Security doesnt support finite difference')
+
+        # TODO: Mixin doesn't seem to work here
+        super(FiniteDifferenceEngine, self).__init__([security], FiniteDifferenceGrid(security.tenor, pde))
         self.pde = pde
         self.scheme = scheme
 
-    def price(self, num_steps: int, num_paths: int, std: float = 5):
-        slices = self.model.simulate_states(num_steps, num_paths, std)
-        values = np.zeros((num_steps + 1, num_paths + 2))  # +1 for final step, +2 for boundaries
+    def price(self, steps: Dict[str, int], scale: float = 5):
+        for idx, dt, prev, curr, time_slice in self.model.run(steps, scale=scale):
+            if idx > 0:
+                lx = dt * self.pde.differential_operator(time_slice.states)
+                self.securities[0].update_boundary(curr, time_slice)
+                self.scheme.step(curr, prev, lx)
+            curr[:] = self.securities[0].backprop(time_slice, curr, curr)  # in FD, continuation is curr
 
-        # price securities on each time step
-        for t_idx, time_slice in enumerate(slices):
-            prev = values[t_idx - 1]
-            continuation = None  # finite difference is continuation already
-            raw = self.securities[0].backprop(time_slice, prev, continuation)
-            lx = self.pde.lx(time_slice.state('Stock'))
-            self.scheme.step(values[t_idx], raw, lx)
-
-        return np.mean(values[-1], axis=1)
-
-
+        return self.model.values

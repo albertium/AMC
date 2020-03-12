@@ -1,10 +1,10 @@
 
 import abc
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Generator
 import numpy as np
 from sklearn import preprocessing
 
-from .pde import PDE1D
+from .pde import PDE
 
 
 class TimeSlice:
@@ -77,23 +77,49 @@ class BlackScholes(Simulator):
         return np.linspace(dt, tenor, num_steps), {'numeraire': numeraire, 'stock': underlying}
 
 
-class GridSimulator(Simulator):
-    def __init__(self, pde: PDE1D):
-        self.spot = pde.spot
-        self.atm_vol = pde.atm_vol
-        self.is_normal = pde.is_normal
+class Grid(abc.ABC):
+    # TODO: to replace simulator
+    def __init__(self, tenor: float, pde: PDE):
+        self.tenor = tenor
+        self.pde = pde
+        self.factors = pde.factors
+        self.factor_names = ['t'] + [factor.name for factor in self.factors]
+        self.values = None
 
-    def _simulate_states(self, tenor: float, num_steps: int, num_paths: int, std: float = 5) -> \
-            Tuple[np.ndarray, Dict[str, np.ndarray]]:
-        if self.is_normal:
-            deviation = std * self.atm_vol
-            lb = self.spot - deviation
-            ub = self.spot + deviation
-        else:  # exponential
-            deviation = np.exp(std * self.atm_vol)
-            lb = self.spot / deviation
-            ub = self.spot * deviation
+    @abc.abstractmethod
+    def run(self, steps: Dict[str, int], scale: float = None) \
+            -> Generator[Tuple[int, float, np.ndarray, np.ndarray, TimeSlice], None, None]:
+        pass
 
-        dt = tenor / num_steps
-        underlying = np.linspace(lb, ub, num_paths)
-        return np.linspace(dt, tenor, num_steps), {'stock': underlying}
+
+class FiniteDifferenceGrid(Grid):
+
+    def __init__(self, tenor: float, pde: PDE):
+        super(FiniteDifferenceGrid, self).__init__(tenor=tenor, pde=pde)
+
+    def run(self, steps: Dict[str, int], scale: float = 5) \
+            -> Generator[Tuple[int, float, np.ndarray, np.ndarray, TimeSlice], None, None]:
+
+        if len(set(self.factor_names) - steps.keys()) > 0:
+            raise ValueError('Not all steps are specified')
+
+        # +1 for time since 1 step means payoff plus one step
+        self.values = np.zeros([steps[name] + 1 if name == 't' else steps[name] for name in self.factor_names])
+        ts = np.linspace(self.tenor, 0, steps['t'] + 1)
+        xs = {}
+        for factor in self.factors:
+            if factor.is_normal:
+                deviation = scale * factor.atm_vol
+                lb = factor.spot - deviation
+                ub = factor.spot + deviation
+            else:  # exponential
+                deviation = np.exp(scale * factor.atm_vol)
+                lb = factor.spot / deviation
+                ub = factor.spot * deviation
+
+            xs[factor.name] = np.linspace(lb, ub, steps[factor.name])
+
+        prev_t = ts[0]
+        for t_idx, t in enumerate(ts):
+            yield t_idx, prev_t - t, self.values[t_idx - 1], self.values[t_idx], TimeSlice(timestamp=t, states=xs)
+            prev_t = t
