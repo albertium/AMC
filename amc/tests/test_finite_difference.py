@@ -1,10 +1,13 @@
 
 import unittest
 import numpy as np
-from numpy.testing import assert_almost_equal
+from numpy.testing import assert_almost_equal, assert_allclose
 from scipy.sparse import diags
 
-from amc.engine import FiniteDifferenceScheme
+from amc.security import HeatSecurity
+from amc.engine import FiniteDifferenceEngine, FiniteDifferenceScheme
+from amc.engine import ExplicitScheme, ImplicitScheme, CrankNicolsonScheme
+from amc.pde import HeatPDE
 
 
 class TestLinearAlgebra(unittest.TestCase):
@@ -41,3 +44,40 @@ class TestLinearAlgebra(unittest.TestCase):
         assert_almost_equal(b, expected, decimal=18)  # make sure b is not overwritten
         assert_almost_equal(inv, inv_saved, decimal=18)  # make sure inv is not overwritten in backward step
 
+    def test_explicit_scheme(self):
+        # explicit is not stable but the more steps you put, the more accuracy you get
+        n = 128
+        alpha = 0.25  # stability condition: alpha = dt / (dx)^2 <= 0.5
+        m = int((n / 4) ** 2 / alpha)  # range is from -2 to 2. See below
+
+        sec = HeatSecurity(1)
+        pde = HeatPDE()  # pde fix the atm vol to be 2
+        engine = FiniteDifferenceEngine(sec, pde, ExplicitScheme())
+        ans = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
+        expected = np.exp(np.linspace(-2, 2, n) + 1)  # solution is exp(x + tau) = exp(x + 1)
+        assert_allclose(ans, expected, rtol=0.00005, atol=0)
+
+    def test_implicit_scheme(self):
+        # implicit scheme is robust but accuracy increases much slower than explicit
+        n = 128  # range steps
+        m = 4096  # time steps to match explicit scheme
+
+        sec = HeatSecurity(1)
+        pde = HeatPDE()  # pde fix the atm vol to be 2
+        engine = FiniteDifferenceEngine(sec, pde, ImplicitScheme())
+        ans = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
+        expected = np.exp(np.linspace(-2, 2, n) + 1)  # solution is exp(x + tau) = exp(x + 1)
+        assert_allclose(ans, expected, rtol=0.0005, atol=0)
+
+    def test_crank_nicolson_scheme(self):
+        # CN is robust but accuracy doesn't increase after certain step size
+        # Is it because of backward step or implementation?
+        n = 128  # range steps
+        m = 128  # time steps
+
+        sec = HeatSecurity(1)
+        pde = HeatPDE()  # pde fix the atm vol to be 2
+        engine = FiniteDifferenceEngine(sec, pde, CrankNicolsonScheme())
+        ans = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
+        expected = np.exp(np.linspace(-2, 2, n) + 1)  # solution is exp(x + tau) = exp(x + 1)
+        assert_allclose(ans, expected, rtol=0.0001, atol=0)

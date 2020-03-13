@@ -108,6 +108,27 @@ class ExplicitScheme(FiniteDifferenceScheme):
         self.forward_step(v_new, v, lx)
 
 
+class ImplicitScheme(FiniteDifferenceScheme):
+    def step(self, v_new: np.ndarray, v: np.ndarray, lx: np.ndarray) -> None:
+        lx = -lx
+        lx[1] += 1
+        self.backward_step(v_new, v, lx)
+
+
+class CrankNicolsonScheme(FiniteDifferenceScheme):
+    def step(self, v_new: np.ndarray, v: np.ndarray, lx: np.ndarray) -> None:
+        # TODO: need to copy lx, may not be efficient
+        # forward step
+        lx = 0.5 * lx  # half step
+        lx[1] += 1
+        self.forward_step(v_new, v, lx)
+
+        # backward step
+        lx = -lx
+        lx[1] += 2  # just to make 1 - 0.5 * original lx
+        self.backward_step(v_new, v_new, lx)  # backward step only need v_new[1: -1]. Boundaries doesn't affect
+
+
 class FiniteDifferenceEngine(PricingEngine):
     """
     only price 1D PDE for now
@@ -129,4 +150,4 @@ class FiniteDifferenceEngine(PricingEngine):
                 self.scheme.step(curr, prev, lx)
             curr[:] = self.securities[0].backprop(time_slice, curr, curr)  # in FD, continuation is curr
 
-        return self.model.values
+        return self.model.values[-1]
