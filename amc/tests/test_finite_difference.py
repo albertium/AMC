@@ -4,10 +4,11 @@ import numpy as np
 from numpy.testing import assert_almost_equal, assert_allclose
 from scipy.sparse import diags
 
-from amc.security import HeatSecurity
+from amc.security import HeatSecurity, EuropeanCall
 from amc.engine import FiniteDifferenceEngine, FiniteDifferenceScheme
 from amc.engine import ExplicitScheme, ImplicitScheme, CrankNicolsonScheme
-from amc.pde import HeatPDE
+from amc.pde import HeatPDE, BlackScholesPDE1D
+from amc.helper import get_european_call_bs
 
 
 class TestLinearAlgebra(unittest.TestCase):
@@ -82,3 +83,21 @@ class TestLinearAlgebra(unittest.TestCase):
         ans, _ = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
         expected = np.exp(np.linspace(-2, 2, n) + 1)  # solution is exp(x + tau) = exp(x + 1)
         assert_allclose(ans, expected, rtol=0.0001, atol=0)
+
+    def test_black_scholes(self):
+        m = 100  # time steps
+        n = 600
+
+        asset = 'AAPL'
+        s, k = 248, 300
+        r, q, sig, t = 254 / s - 1, 0, 0.72, 0.25
+
+        sec = EuropeanCall(asset=asset, strike=k, tenor=t)
+        pde = BlackScholesPDE1D(asset=asset, spot=s, r=r, q=q, sig=sig)
+        engine = FiniteDifferenceEngine(sec, pde, CrankNicolsonScheme())
+        ans, xs = engine.price({'t': m, asset: n}, scale=5)
+        mask = (xs > k * 0.8) & (xs < k * 1.2)
+        ans = ans[mask]
+        xs = xs[mask]
+        expected = [get_european_call_bs(x, k, r, q, sig, t) for x in xs]
+        assert_allclose(ans, expected, atol=0, rtol=0.0005)

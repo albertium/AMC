@@ -77,7 +77,7 @@ class PDE1D(PDE):
         dxp = dx[: -1]
         lx = np.zeros([3, dx.shape[0] - 1])
         lx[0, :] = (2 * diffusion - convection * dxp) / dxi / d2x
-        lx[1, :] = reaction + (convection * (dxp - dxi) - 2 * diffusion) / dxi / dxp
+        lx[1, :] = -reaction + (convection * (dxp - dxi) - 2 * diffusion) / dxi / dxp
         lx[2, :] = (2 * diffusion + convection * dxi) / dxp / d2x
         return lx
 

@@ -32,7 +32,6 @@ class MCSlice(TimeSlice):
 
 
 class GridSlice(TimeSlice):
-    # TODO: converge with time slice?
     def __init__(self, t: float, dt: float, values: np.ndarray, dims: list, states: Dict[str, np.ndarray]):
         super(GridSlice, self).__init__(t=t, states=states)
         self.dt = dt
@@ -40,7 +39,8 @@ class GridSlice(TimeSlice):
         self.dims = dims
 
     def value(self, name: str, idx: int):
-        slicer = tuple(slice(idx, idx + 1 if idx >= 0 else None) if x == name else None for x in self.dims)
+        # TODO: doesn't seem efficient
+        slicer = tuple(slice(idx, None if idx == -1 else idx + 1) if x == name else None for x in self.dims)
         return self.values[slicer]
 
 
@@ -129,11 +129,11 @@ class FiniteDifferenceGrid(Grid):
         xs = {}
         for factor in self.factors:
             if factor.is_normal:
-                deviation = scale * factor.atm_vol
+                deviation = scale * factor.atm_vol * np.sqrt(self.tenor)
                 lb = factor.spot - deviation
                 ub = factor.spot + deviation
             else:  # exponential
-                deviation = np.exp(scale * factor.atm_vol)
+                deviation = np.exp(scale * factor.atm_vol * np.sqrt(self.tenor))
                 lb = factor.spot / deviation
                 ub = factor.spot * deviation
 

@@ -144,8 +144,6 @@ class LinearBoundary(Boundary):
 class Security(abc.ABC):
     def __init__(self, tenor: float, factors: List[str] = None, need_continuation: bool = False,
                  mask: MaskGenerator = None, boundaries: List[Boundary] = None):
-        self.support_mc = True  # TODO: should we have a separate mixin for MC?
-        self.support_fd = False
         self.tenor = tenor
         self.need_continuation = need_continuation
         self.mask = mask
@@ -190,8 +188,10 @@ class HeatSecurity(Security):
 
 # ================================= European =================================
 class EuropeanOptionBase(Security):
-    def __init__(self, payoff: Payoff, tenor: float):
-        super(EuropeanOptionBase, self).__init__(tenor)
+    def __init__(self, asset: str, payoff: Payoff, tenor: float):
+        lb = LinearBoundary(asset, Bound.LOWER)
+        ub = LinearBoundary(asset, Bound.UPPER)
+        super(EuropeanOptionBase, self).__init__(tenor=tenor, factors=[asset], boundaries=[lb, ub])
         self.payoff = payoff
 
     def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> Union[None, np.ndarray]:
@@ -205,7 +205,7 @@ class EuropeanCall(EuropeanOptionBase):
         self.asset = asset
         self.strike = strike
         payoff = CallPayoff(asset, strike)
-        super(EuropeanCall, self).__init__(payoff, tenor)
+        super(EuropeanCall, self).__init__(asset=asset, payoff=payoff, tenor=tenor)
 
     def update_boundary(self, values: np.ndarray, time_slice: MCSlice) -> None:
         x = time_slice.state(self.asset)
@@ -217,7 +217,7 @@ class EuropeanCall(EuropeanOptionBase):
 class EuropeanPut(EuropeanOptionBase):
     def __init__(self, asset: str, strike: float, tenor: float):
         payoff = PutPayoff(asset, strike)
-        super(EuropeanPut, self).__init__(payoff, tenor)
+        super(EuropeanPut, self).__init__(asset=asset, payoff=payoff, tenor=tenor)
 
 
 class AmericanOptionBase(Security):
