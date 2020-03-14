@@ -1,11 +1,11 @@
 
 import abc
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Tuple
 import numpy as np
 from scipy.linalg import solve_banded
 
-from .security import Security, FiniteDifferenceMixin
-from .simulation import Simulator, Grid, FiniteDifferenceGrid
+from .security import Security
+from .grid import Simulator, Grid, FiniteDifferenceGrid, GridSlice
 from .fitter import Fitter
 from .pde import PDE
 
@@ -54,7 +54,7 @@ class MonteCarloEngine(PricingEngine):
 
 class FiniteDifferenceScheme(abc.ABC):
     @abc.abstractmethod
-    def step(self, v_new: np.ndarray, v: np.ndarray, lx: np.ndarray) -> None:
+    def step(self, curr: GridSlice, prev: GridSlice, pde: PDE, sec: Security) -> None:
         """
         change v_new inplace
         """
@@ -101,32 +101,37 @@ class FiniteDifferenceScheme(abc.ABC):
 
 
 class ExplicitScheme(FiniteDifferenceScheme):
-    def step(self, v_new: np.ndarray, v: np.ndarray, lx: np.ndarray) -> None:
+    def step(self, curr: GridSlice, prev: GridSlice, pde: PDE, sec: Security) -> None:
         # TODO: need to copy lx, may not be efficient
-        lx = lx.copy()
+        lx = curr.dt * pde.differential_operator(curr.states)
         lx[1] += 1
-        self.forward_step(v_new, v, lx)
+        sec.update_differential_operator(lx, curr)
+        self.forward_step(curr.values, prev.values, lx)
 
 
 class ImplicitScheme(FiniteDifferenceScheme):
-    def step(self, v_new: np.ndarray, v: np.ndarray, lx: np.ndarray) -> None:
-        lx = -lx
+    def step(self, curr: GridSlice, prev: GridSlice, pde: PDE, sec: Security) -> None:
+        lx = -curr.dt * pde.differential_operator(curr.states)
         lx[1] += 1
-        self.backward_step(v_new, v, lx)
+        self.backward_step(curr.values, prev.values, lx)
 
 
 class CrankNicolsonScheme(FiniteDifferenceScheme):
-    def step(self, v_new: np.ndarray, v: np.ndarray, lx: np.ndarray) -> None:
+    def step(self, curr: GridSlice, prev: GridSlice, pde: PDE, sec: Security) -> None:
         # TODO: need to copy lx, may not be efficient
+        lx_base = (0.5 * curr.dt) * pde.differential_operator(curr.states)
+
         # forward step
-        lx = 0.5 * lx  # half step
+        lx = lx_base.copy()
         lx[1] += 1
-        self.forward_step(v_new, v, lx)
+        sec.update_differential_operator(lx, curr)
+        self.forward_step(curr.values, prev.values, lx)
 
         # backward step
-        lx = -lx
-        lx[1] += 2  # just to make 1 - 0.5 * original lx
-        self.backward_step(v_new, v_new, lx)  # backward step only need v_new[1: -1]. Boundaries doesn't affect
+        lx = -lx_base
+        lx[1] += 1  # just to make 1 - 0.5 * original lx
+        sec.update_differential_operator(lx, curr)
+        self.backward_step(curr.values, curr.values, lx)  # backward step only need v_new[1: -1]. Boundaries doesn't affect
 
 
 class FiniteDifferenceEngine(PricingEngine):
@@ -134,20 +139,18 @@ class FiniteDifferenceEngine(PricingEngine):
     only price 1D PDE for now
     """
     def __init__(self, security: Security, pde: PDE, scheme: FiniteDifferenceScheme):
-        if not isinstance(security, FiniteDifferenceMixin):
-            raise RuntimeError('Security doesnt support finite difference')
-
-        # TODO: Mixin doesn't seem to work here
         super(FiniteDifferenceEngine, self).__init__([security], FiniteDifferenceGrid(security.tenor, pde))
         self.pde = pde
         self.scheme = scheme
 
-    def price(self, steps: Dict[str, int], scale: float = 5):
-        for idx, dt, prev, curr, time_slice in self.model.run(steps, scale=scale):
+    def price(self, steps: Dict[str, int], scale: float = 3) -> Tuple[np.ndarray, np.ndarray]:
+        sec = self.securities[0]
+        for idx, curr, prev in self.model.run(steps, scale=scale):
             if idx > 0:
-                lx = dt * self.pde.differential_operator(time_slice.states)
-                self.securities[0].update_boundary(curr, time_slice)
-                self.scheme.step(curr, prev, lx)
-            curr[:] = self.securities[0].backprop(time_slice, curr, curr)  # in FD, continuation is curr
+                sec.update_values(curr)
+                self.scheme.step(curr, prev, self.pde, sec)
+                sec.post_process_values(curr)
+            curr.values[:] = sec.backprop(curr, curr.values, curr.values)  # in FD, continuation is curr
 
-        return self.model.values[-1]
+        factor = sec.factors[0]
+        return self.model.values[-1], curr.state(factor)

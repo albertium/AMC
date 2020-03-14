@@ -1,7 +1,7 @@
 
 from amc.engine import MonteCarloEngine
 from amc.security import AmericanCall
-from amc.simulation import BlackScholes
+from amc.grid import BlackScholes
 from amc.fitter import LASSOFitter
 from amc import helper, util
 

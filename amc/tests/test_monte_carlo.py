@@ -1,7 +1,7 @@
 
 import unittest
 from amc.security import EuropeanCall, EuropeanPut, AmericanCall, AmericanPut
-from amc.simulation import BlackScholes
+from amc.grid import BlackScholes
 from amc.engine import MonteCarloEngine
 from amc.fitter import LASSOFitter
 from amc.helper import get_european_call_bs, get_european_put_bs

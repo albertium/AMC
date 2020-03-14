@@ -7,21 +7,41 @@ from sklearn import preprocessing
 from .pde import PDE
 
 
-class TimeSlice:
-    def __init__(self, timestamp: float, states: Dict[str, np.ndarray]):
-        self.timestamp = timestamp
+class TimeSlice(abc.ABC):
+    def __init__(self, t: float, states: Dict[str, np.ndarray]):
+        self.t = t
         self.states = states
 
     @property
     def time(self):
-        return self.timestamp
+        return self.t
+
+    def state(self, name):
+        return self.states[name]
+
+
+class MCSlice(TimeSlice):
+    def __init__(self, t: float, states: Dict[str, np.ndarray]):
+        super(MCSlice, self).__init__(t=t, states=states)
+        self.t = t
+        self.states = states
 
     @property
     def numeraire(self):
         return self.states['numeraire']
 
-    def state(self, name):
-        return self.states[name]
+
+class GridSlice(TimeSlice):
+    # TODO: converge with time slice?
+    def __init__(self, t: float, dt: float, values: np.ndarray, dims: list, states: Dict[str, np.ndarray]):
+        super(GridSlice, self).__init__(t=t, states=states)
+        self.dt = dt
+        self.values = values
+        self.dims = dims
+
+    def value(self, name: str, idx: int):
+        slicer = tuple(slice(idx, idx + 1 if idx >= 0 else None) if x == name else None for x in self.dims)
+        return self.values[slicer]
 
 
 class RNGenerator:
@@ -50,12 +70,12 @@ class Simulator(abc.ABC):
     def _simulate_states(self, tenor: float, num_steps: int, num_paths: int) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         pass
 
-    def simulate_states(self, tenor: float, num_steps: int, num_paths: int) -> List[TimeSlice]:
+    def simulate_states(self, tenor: float, num_steps: int, num_paths: int) -> List[MCSlice]:
         timestamps, states = self._simulate_states(tenor, num_steps, num_paths)
 
         sim = []
         for idx in range(len(timestamps)):
-            sim.append(TimeSlice(timestamps[idx], {k: v[idx] if v.ndim > 1 else v for k, v in states.items()}))
+            sim.append(MCSlice(timestamps[idx], {k: v[idx] if v.ndim > 1 else v for k, v in states.items()}))
         sim.reverse()
 
         return sim
@@ -88,7 +108,7 @@ class Grid(abc.ABC):
 
     @abc.abstractmethod
     def run(self, steps: Dict[str, int], scale: float = None) \
-            -> Generator[Tuple[int, float, np.ndarray, np.ndarray, TimeSlice], None, None]:
+            -> Generator[Tuple[int, GridSlice, GridSlice], None, None]:
         pass
 
 
@@ -98,7 +118,7 @@ class FiniteDifferenceGrid(Grid):
         super(FiniteDifferenceGrid, self).__init__(tenor=tenor, pde=pde)
 
     def run(self, steps: Dict[str, int], scale: float = 5) \
-            -> Generator[Tuple[int, float, np.ndarray, np.ndarray, TimeSlice], None, None]:
+            -> Generator[Tuple[int, GridSlice, GridSlice], None, None]:
 
         if len(set(self.factor_names) - steps.keys()) > 0:
             raise ValueError('Not all steps are specified')
@@ -119,7 +139,11 @@ class FiniteDifferenceGrid(Grid):
 
             xs[factor.name] = np.linspace(lb, ub, steps[factor.name])
 
+        dims = self.factor_names[1:]
         prev_t = ts[0]
+        prev_slice = GridSlice(t=prev_t, dt=0, values=self.values[-1], dims=dims, states=xs)
         for t_idx, t in enumerate(ts):
-            yield t_idx, prev_t - t, self.values[t_idx - 1], self.values[t_idx], TimeSlice(timestamp=t, states=xs)
+            curr_slice = GridSlice(t=t, dt=prev_t - t, values=self.values[t_idx], dims=dims, states=xs)
+            yield t_idx, curr_slice, prev_slice
             prev_t = t
+            prev_slice = curr_slice

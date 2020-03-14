@@ -4,7 +4,7 @@ from typing import List, Union
 import numpy as np
 from sklearn import preprocessing, linear_model, pipeline
 
-from .simulation import TimeSlice
+from .grid import TimeSlice
 
 
 class Fitter(abc.ABC):

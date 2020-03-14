@@ -4,6 +4,7 @@ import numpy as np
 from typing import Union, List, Dict
 
 
+# ================================= Base Class =================================
 class Factor:
     def __init__(self, name: str, spot: float, atm_vol: float, is_normal: bool = False):
         self.name = name
@@ -17,7 +18,7 @@ class PDE(abc.ABC):
         self.factors = factors
 
     @abc.abstractmethod
-    def differential_operator(self, states: Dict[str, np.ndarray]):
+    def differential_operator(self, states: Dict[str, np.ndarray]) -> np.ndarray:
         pass
 
 
@@ -58,9 +59,10 @@ class PDE1D(PDE):
         if self.is_dynamic_pde or self.lx is None:
             dx = x[1:] - x[: -1]
             d2x = x[2:] - x[: -2]
-            convection = self.convection(x)
-            diffusion = self.diffusion(x)
-            reaction = self.reaction(x)
+            interior = x[1: -1]
+            convection = self.convection(interior)
+            diffusion = self.diffusion(interior)
+            reaction = self.reaction(interior)
             self.lx = PDE1D.generate_diff_operator(convection, diffusion, reaction, dx, d2x)
         return self.lx
 
@@ -130,6 +132,7 @@ class PDE2D(abc.ABC):
         pass
 
 
+# ================================= Template PDE =================================
 class HeatPDE(PDE1D):
     def __init__(self):
         heat = Factor(name='Heat', spot=0, atm_vol=2, is_normal=True)
@@ -145,9 +148,10 @@ class HeatPDE(PDE1D):
         return 0
 
 
+# ================================= Black Scholes =================================
 class BlackScholesPDE1D(PDE1D):
-    def __init__(self, s: float, r: float, q: float, sig: float):
-        super(BlackScholesPDE1D, self).__init__(s, sig, is_normal=False, is_dynamic_pde=False)
+    def __init__(self, asset: str, spot: float, r: float, q: float, sig: float):
+        super(BlackScholesPDE1D, self).__init__(Factor(name=asset, spot=spot, atm_vol=sig))
         self.r = r
         self.carry = r - q
         self.var = sig ** 2

@@ -25,6 +25,7 @@ class TestLinearAlgebra(unittest.TestCase):
         assert_almost_equal(ans[1: -1], expected, decimal=15)
 
     def test_backward_step(self):
+        # randomized test, may fail sometime, just need to re-run
         n = 10
         a = np.random.rand(3, n)
         b = np.random.rand(n + 2)
@@ -53,7 +54,7 @@ class TestLinearAlgebra(unittest.TestCase):
         sec = HeatSecurity(1)
         pde = HeatPDE()  # pde fix the atm vol to be 2
         engine = FiniteDifferenceEngine(sec, pde, ExplicitScheme())
-        ans = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
+        ans, _ = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
         expected = np.exp(np.linspace(-2, 2, n) + 1)  # solution is exp(x + tau) = exp(x + 1)
         assert_allclose(ans, expected, rtol=0.00005, atol=0)
 
@@ -65,7 +66,7 @@ class TestLinearAlgebra(unittest.TestCase):
         sec = HeatSecurity(1)
         pde = HeatPDE()  # pde fix the atm vol to be 2
         engine = FiniteDifferenceEngine(sec, pde, ImplicitScheme())
-        ans = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
+        ans, _ = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
         expected = np.exp(np.linspace(-2, 2, n) + 1)  # solution is exp(x + tau) = exp(x + 1)
         assert_allclose(ans, expected, rtol=0.0005, atol=0)
 
@@ -78,6 +79,6 @@ class TestLinearAlgebra(unittest.TestCase):
         sec = HeatSecurity(1)
         pde = HeatPDE()  # pde fix the atm vol to be 2
         engine = FiniteDifferenceEngine(sec, pde, CrankNicolsonScheme())
-        ans = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
+        ans, _ = engine.price({'t': m, 'Heat': n}, scale=1)  # scale * atm vol = 1 * 2 = 2 decides the boundaries
         expected = np.exp(np.linspace(-2, 2, n) + 1)  # solution is exp(x + tau) = exp(x + 1)
         assert_allclose(ans, expected, rtol=0.0001, atol=0)
