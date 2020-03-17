@@ -108,12 +108,12 @@ class FiniteDifferenceScheme(abc.ABC):
         solve_tridiagonal(self.cp, v_new[1: -1], v[1: -1], diff_op, diff_op[0, 0] * v_new[0], diff_op[2, -1] * v_new[-1])
 
     @staticmethod
-    def nd_forward_step(v_new: np.ndarray, v: np.ndarray, diff_op, op_type=Op.ADD) -> None:
+    def nd_forward_step(v_new: np.ndarray, v: np.ndarray, diff_op, op_type=Op.ADD, shift: int = 0) -> None:
         """
         2d version of forward step
         """
         for idx in range(v_new.shape[0] - 2):
-            FiniteDifferenceScheme.forward_step(v_new[idx + 1], v[idx + 1], diff_op[:, idx], op_type=op_type)
+            FiniteDifferenceScheme.forward_step(v_new[idx + 1], v[idx + 1 + shift], diff_op[:, idx], op_type=op_type)
 
     def nd_backward_step(self, v_new: np.ndarray, v: np.ndarray, diff_op) -> None:
         """
@@ -121,6 +121,11 @@ class FiniteDifferenceScheme(abc.ABC):
         """
         for idx in range(v_new.shape[0] - 2):
             self.backward_step(v_new[idx + 1], v[idx + 1], diff_op[:, idx])
+
+    @staticmethod
+    def forward_step_cross(v_new: np.ndarray, v: np.ndarray, diff_op: np.ndarray) -> None:
+        for idx in range(3):
+            FiniteDifferenceScheme.nd_forward_step(v_new, v, diff_op[idx], shift=idx - 1)
 
 
 class ExplicitScheme(FiniteDifferenceScheme):
@@ -170,9 +175,10 @@ class DouglasScheme(FiniteDifferenceScheme):
     """
 
     def step(self, curr: GridSlice, prev: GridSlice, pde: PDE2D, sec: Security) -> None:
-        lx_base, ly_base = pde.differential_operator(curr.states)  # type: np.ndarray
+        # !!! don't change lx_base, ly_base and lxy since they may be re-used in non-dynamic pde !!!
+        lx_base, ly_base, lxy = pde.differential_operator(curr.states)  # type: np.ndarray
         # Lx times 0.5 because we need to subtract it back later anyway. See above description
-        lx_base, ly_base = 0.5 * curr.dt * lx_base, curr.dt * ly_base
+        lx_base, ly_base, lxy = 0.5 * curr.dt * lx_base, curr.dt * ly_base, curr.dt * lxy
 
         # ----- explicit step on Lx, Ly and Lxy -----
         # TODO: Lxy to be added
@@ -184,6 +190,7 @@ class DouglasScheme(FiniteDifferenceScheme):
         sec.update_differential_operator(pde.y_name, ly.transpose((0, 2, 1)), curr)
 
         # TODO: apply Lx, Ly and Lxy sequentially is not efficient enough. Can we do L * prev directly?
+        self.forward_step_cross(curr.values.T, prev.values.T, lxy)
         self.nd_forward_step(curr.values.T, prev.values.T, lx)
 
         # use transpose because y is primary now

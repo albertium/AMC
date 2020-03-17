@@ -24,6 +24,7 @@ class PDE(abc.ABC):
         get differential operator matrix (Lx + Lxx). Support non-uniform mesh
         See Iain Clark formula (7.56)
         """
+        # TODO: should it be that dxi = dx[:-1]
         dxi = dx[1:]
         dxp = dx[: -1]
         lx = np.zeros([3] + sizes)  # use dx shape and y_dim because convection can be a scalar
@@ -102,6 +103,12 @@ class PDE2D(PDE):
         self.x_name = factors[0].name
         self.y_name = factors[1].name
 
+        # for caching coordinates
+        self.coordinates_cached = False
+        self.dx, self.x_int, self.dy, self.y_int = None, None, None, None
+        self.dxi, self.dxp, self.d2x, self.bx = None, None, None, None
+        self.dyi, self.dyp, self.d2y, self.by = None, None, None, None
+
     @abc.abstractmethod
     def convection_x(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
         """
@@ -157,6 +164,44 @@ class PDE2D(PDE):
         """
         pass
 
+    @staticmethod
+    def generate_cross_operator(cross: np.ndarray, bx: np.ndarray, by: np.ndarray) -> np.ndarray:
+        """
+        See Iain Clark 7.60
+        We put y dimension in front of x dimension to allow more efficient implementation of forward_step_cross
+        """
+        diff_op = np.zeros([3, 3, by.shape[1], bx.shape[1]])
+        for i in range(3):
+            for j in range(3):
+                diff_op[i, j] = np.outer(by[i], bx[j]) * cross.T
+
+        return diff_op
+
+    def cache_coordinates(self, xs: np.ndarray, ys: np.ndarray):
+
+        if not self.coordinates_cached:
+            self.x_int = xs[1: -1]
+            self.dx = xs[1:] - xs[:-1]
+            self.d2x = xs[2:] - xs[:-2]
+            self.dxi = self.dx[:-1]
+            self.dxp = self.dx[1:]
+            self.bx = np.zeros([3, len(self.dxi)])
+            self.bx[0] = -self.dxp / self.dxi / self.d2x
+            self.bx[1] = (self.dxp - self.dxi) / self.dxi / self.dxp
+            self.bx[2] = self.dxi / self.dxp / self.d2x
+
+            self.y_int = ys[1: -1]
+            self.dy = ys[1:] - ys[:-1]
+            self.d2y = ys[2:] - ys[:-2]
+            self.dyi = self.dy[:-1]
+            self.dyp = self.dy[1:]
+            self.by = np.zeros([3, len(self.dyi)])
+            self.by[0] = -self.dyp / self.dyi / self.d2y
+            self.by[1] = (self.dyp - self.dyi) / self.dyi / self.dyp
+            self.by[2] = self.dyi / self.dyp / self.d2y
+
+            self.coordinates_cached = True
+
     def differential_operator(self, states: Dict[str, np.ndarray]) -> Tuple:
         """
         Lx - differential operator. Equals Lx + Lxx
@@ -167,19 +212,20 @@ class PDE2D(PDE):
         if self.is_dynamic_pde or not self.diff_ops:
             xs, ys = states[self.x_name], states[self.y_name]
             x_dim, y_dim = len(xs), len(ys)
-            dx, d2x, x_int = xs[1:] - xs[:-1], xs[2:] - xs[:-2], xs[1: -1]
-            dy, d2y, y_int = ys[1:] - ys[:-1], ys[2:] - ys[:-2], ys[1: -1]
+            self.cache_coordinates(xs, ys)
 
-            convection_x, diffusion_x = self.convection_x(x_int, y_int), self.diffusion_x(x_int, y_int)
-            convection_y, diffusion_y = self.convection_y(x_int, y_int), self.diffusion_y(x_int, y_int)
-            reaction = self.reaction(x_int, y_int) / 2  # reaction is split between x and y
+            convection_x, diffusion_x = self.convection_x(self.x_int, self.y_int), self.diffusion_x(self.x_int, self.y_int)
+            convection_y, diffusion_y = self.convection_y(self.x_int, self.y_int), self.diffusion_y(self.x_int, self.y_int)
+            cross = self.cross(self.x_int, self.y_int)
+            reaction = self.reaction(self.x_int, self.y_int) / 2  # reaction is split between x and y
             self.diff_ops[self.x_name] = self.generate_diff_operator(convection_x, diffusion_x, reaction,
-                                                                     dx, d2x, [y_dim - 2, x_dim - 2])
+                                                                     self.dx, self.d2x, [y_dim - 2, x_dim - 2])
             self.diff_ops[self.y_name] = self.generate_diff_operator(convection_y, diffusion_y, reaction,
-                                                                     dy, d2y, [x_dim - 2, y_dim - 2])
+                                                                     self.dy, self.d2y, [x_dim - 2, y_dim - 2])
+            self.diff_ops['xy'] = self.generate_cross_operator(cross, self.bx, self.by)
 
         # TODO: should also return 'xy'
-        return self.diff_ops[self.x_name], self.diff_ops[self.y_name]
+        return self.diff_ops[self.x_name], self.diff_ops[self.y_name], self.diff_ops['xy']
 
 
 # ================================= Template PDE =================================
