@@ -3,8 +3,9 @@ import abc
 from typing import List, Union, Tuple, Dict, Callable
 import numpy as np
 
-from .grid import MCSlice, GridSlice, TimeSlice
-from .const import Bound
+from amc.grid import MCSlice, GridSlice, TimeSlice
+from amc.data import EquityFactor
+from amc.const import Bound
 
 
 # ================================= Payoff =================================
@@ -71,7 +72,7 @@ class Boundary:
     def update_values(self, curr_slice: GridSlice) -> None:
         pass
 
-    def update_differential_operator(self, diff_op: np.ndarray, curr_slice: GridSlice) -> None:
+    def update_differential_operator(self, dim:str, diff_op: np.ndarray, curr_slice: GridSlice) -> None:
         pass
 
     def post_process_values(self, curr_slice: GridSlice) -> None:
@@ -102,24 +103,24 @@ class LinearBoundary(Boundary):
     See Clark 7.54
     """
 
-    def update_differential_operator(self, diff_op: np.ndarray, curr_slice: GridSlice) -> None:
+    def update_differential_operator(self, dim:str, diff_op: np.ndarray, curr_slice: GridSlice) -> None:
+        # TODO: linear boundary doesn't seem correct now. Need to test
+        if dim != self.dim:
+            return
+
         x = curr_slice.state(self.dim)
 
         if self.bound == Bound.UPPER:
             xi = x[-2] - x[-3]
             xp = x[-1] - x[-2]
-
-            # TODO: assume 1D for now
-            diff_op[-1, 1] += diff_op[-1, 2] * (xi + xp) / xi
-            diff_op[-1, 2] -= diff_op[-1, 2] * xp / xi
+            diff_op[0, -1] += diff_op[2, -1] * (xi + xp) / xi
+            diff_op[1, -1] -= diff_op[2, -1] * xp / xi
 
         else:
             xi = x[1] - x[0]
             xp = x[2] - x[1]
-
-            # TODO: assume 1D for now
-            diff_op[0, 1] += diff_op[0, 0] * (xi + xp) / xp
-            diff_op[0, 2] -= diff_op[0, 0] * xi / xp
+            diff_op[1, 0] += diff_op[0, 0] * (xi + xp) / xp
+            diff_op[2, 0] -= diff_op[0, 0] * xi / xp
 
     def post_process_values(self, curr_slice: GridSlice) -> None:
         x = curr_slice.state(self.dim)
@@ -158,9 +159,9 @@ class Security(abc.ABC):
         for boundary in self.boundaries:
             boundary.update_values(curr_slice)
 
-    def update_differential_operator(self, diff_op: np.ndarray, curr_slice: GridSlice) -> None:
+    def update_differential_operator(self, dim: str, diff_op: np.ndarray, curr_slice: GridSlice) -> None:
         for boundary in self.boundaries:
-            boundary.update_differential_operator(diff_op, curr_slice)
+            boundary.update_differential_operator(dim, diff_op, curr_slice)
 
     def post_process_values(self, curr_slice: GridSlice) -> None:
         for boundary in self.boundaries:
@@ -188,10 +189,8 @@ class HeatSecurity(Security):
 
 # ================================= European =================================
 class EuropeanOptionBase(Security):
-    def __init__(self, asset: str, payoff: Payoff, tenor: float):
-        lb = LinearBoundary(asset, Bound.LOWER)
-        ub = LinearBoundary(asset, Bound.UPPER)
-        super(EuropeanOptionBase, self).__init__(tenor=tenor, factors=[asset], boundaries=[lb, ub])
+    def __init__(self, asset: str, payoff: Payoff, tenor: float, boundaries: List[Boundary] = None):
+        super(EuropeanOptionBase, self).__init__(tenor=tenor, factors=[asset], boundaries=boundaries)
         self.payoff = payoff
 
     def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> Union[None, np.ndarray]:
@@ -204,14 +203,10 @@ class EuropeanCall(EuropeanOptionBase):
     def __init__(self, asset: str, strike: float, tenor: float):
         self.asset = asset
         self.strike = strike
-        payoff = CallPayoff(asset, strike)
-        super(EuropeanCall, self).__init__(asset=asset, payoff=payoff, tenor=tenor)
-
-    def update_boundary(self, values: np.ndarray, time_slice: MCSlice) -> None:
-        x = time_slice.state(self.asset)
-        # TODO: assume 1D here
-        values[0] = 0
-        values[-1] = x[-1] - self.strike
+        payoff = CallPayoff(asset, self.strike)
+        lb = DirichletBoundary(asset, Bound.LOWER, lambda gl: 0)
+        ub = DirichletBoundary(asset, Bound.UPPER, lambda gl: gl.state(asset)[-1] - strike)
+        super(EuropeanCall, self).__init__(asset=asset, payoff=payoff, tenor=tenor, boundaries=[lb, ub])
 
 
 class EuropeanPut(EuropeanOptionBase):
@@ -245,3 +240,24 @@ class AmericanPut(AmericanOptionBase):
         payoff = PutPayoff(asset=asset, strike=strike)
         mask = PutMask(asset=asset, strike=strike)
         super(AmericanPut, self).__init__(tenor, payoff, mask)
+
+
+# ================================= Exotic =================================
+class ExchangeOption(Security):
+
+    def __init__(self, equity1: EquityFactor, equity2: EquityFactor, tenor):
+        self.equities = [equity1.name, equity2.name]
+        x_lb = DirichletBoundary(equity1.name, Bound.LOWER, lambda gs: 0)
+        x_ub = DirichletBoundary(equity1.name, Bound.UPPER,
+                                 lambda gs: gs.state(equity1.name)[-1] - gs.state(equity2.name))
+        y_lb = DirichletBoundary(equity2.name, Bound.LOWER,
+                                 lambda gs: gs.state(equity1.name) - gs.state(equity2.name)[0])
+        y_ub = DirichletBoundary(equity2.name, Bound.UPPER, lambda gs: 0)
+        super(ExchangeOption, self).__init__(tenor=tenor, factors=[equity1.name, equity2.name],
+                                             boundaries=[x_lb, x_ub, y_lb, y_ub])
+
+    def backprop(self, time_slice: TimeSlice, last_values: np.ndarray, continuation: np.ndarray) -> np.ndarray:
+        if time_slice.time == self.tenor:
+            grid = time_slice.state(self.equities[0]).reshape(-1, 1) - time_slice.state(self.equities[1])
+            return np.maximum(grid, 0)
+        return last_values

@@ -40,7 +40,12 @@ class GridSlice(TimeSlice):
 
     def value(self, name: str, idx: int):
         # TODO: doesn't seem efficient
-        slicer = tuple(slice(idx, None if idx == -1 else idx + 1) if x == name else None for x in self.dims)
+        if len(self.dims) == 1 and name == self.dims[0]:
+            slicer = slice(idx, None if idx == -1 else idx + 1)
+        elif len(self.dims) == 2:
+            slicer = tuple(idx if x == name else slice(None) for x in self.dims)
+        else:
+            raise ValueError(f"Name {name} doesn't exist")
         return self.values[slicer]
 
 
@@ -112,10 +117,32 @@ class Grid(abc.ABC):
         pass
 
 
-class FiniteDifferenceGrid(Grid):
-
+class MonteCarloGrid(Grid):
     def __init__(self, tenor: float, pde: PDE):
-        super(FiniteDifferenceGrid, self).__init__(tenor=tenor, pde=pde)
+        super(MonteCarloGrid, self).__init__(tenor=tenor, pde=pde)
+        self.factors = self.factors[0] + ['n_sec'] + self.factors[1:]
+
+    def run(self, steps: Dict[str, int], scale: float = None) -> \
+            Generator[Tuple[int, GridSlice, GridSlice], None, None]:
+
+        if len(set(self.factor_names) - steps.keys()) > 0:
+            raise ValueError('Not all steps are specified')
+
+        self.values = np.zeros([steps[name] for name in self.factor_names])
+        ts = np.linspace(self.tenor, 0, steps['t'] + 1)
+        xs = {}
+
+        dims = self.factor_names[2:]
+        prev_t = ts[0]
+        prev_slice = MCSlice(t=prev_t, dt=0, values=self.values[-1], dims=dims, states=xs)
+        for t_idx, t in enumerate(ts):
+            curr_slice = MCSlice(t=t, dt=prev_t - t, values=self.values[t_idx], dims=dims, states=xs)
+            yield t_idx, curr_slice, prev_slice
+            prev_t = t
+            prev_slice = curr_slice
+
+
+class FiniteDifferenceGrid(Grid):
 
     def run(self, steps: Dict[str, int], scale: float = 5) \
             -> Generator[Tuple[int, GridSlice, GridSlice], None, None]:

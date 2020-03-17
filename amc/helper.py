@@ -3,6 +3,7 @@ To host helper functions directly connect to pricing. Less relevant helpers shou
 """
 
 import numpy as np
+from numba import njit
 import pandas as pd
 from scipy.stats import norm
 from sklearn import linear_model
@@ -145,3 +146,25 @@ def plot_implied_vols(imp_vols: pd.DataFrame, n_cols=4):
         ax.set_ylabel('Imp Vol')
 
     plt.show()
+
+@njit
+def solve_tridiagonal(cp: np.ndarray, x: np.ndarray, d: np.ndarray, mat: np.ndarray, e0: float = 0, en: float = 0) -> None:
+    a, b, c = mat[0], mat[1], mat[2]
+    n = len(b)
+
+    cp[0] = c[0] / b[0]  # the first a is not used in calculation
+    x[0] = (d[0] - e0) / b[0]
+
+    # forward
+    last = n - 1
+    for idx in range(1, last):
+        den = b[idx] - a[idx] * cp[idx - 1]
+        cp[idx] = c[idx] / den  # the last c is not used in calculation
+        x[idx] = (d[idx] - a[idx] * x[idx - 1]) / den
+
+    den = b[last] - a[last] * cp[last - 1]
+    x[last] = (d[last] - en - a[last] * x[last - 1]) / den
+
+    # backward
+    for idx in range(n - 2, -1, -1):
+        x[idx] -= cp[idx] * x[idx + 1]

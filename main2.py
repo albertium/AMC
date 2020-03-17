@@ -1,6 +1,7 @@
 
 import pandas as pd
 import numpy as np
+from scipy.interpolate import interp2d
 from amc.helper import calc_implied_vols_from_prices, plot_implied_vols
 
 
@@ -9,30 +10,36 @@ from amc.helper import calc_implied_vols_from_prices, plot_implied_vols
 # plot_implied_vols(new)
 # print(new[new.t_exp < 0.006])
 
-from amc.security import EuropeanCall, HeatSecurity
-from amc.engine import FiniteDifferenceEngine, CrankNicolsonScheme, ExplicitScheme
-from amc.pde import BlackScholesPDE1D, HeatPDE
+from amc.security import EuropeanCall, HeatSecurity, ExchangeOption
+from amc.engine import FiniteDifferenceEngine, CrankNicolsonScheme, ExplicitScheme, DouglasScheme
+from amc.pde import BlackScholesPDE1D, HeatPDE, BlackScholesPDE2D
 from amc.helper import get_european_call_bs
+from amc.data import EquityFactor
+import cProfile
 
 
+print('start')
 asset = 'AAPL'
-S = 248
-K = 300
-r = 254 / S - 1
-q = 0
-sig = 0.72
+s1, q1, sig1 = 90, 0, 0.3
+s2, q2, sig2 = 110, 0, 0.4
+r = 0.01
 t = 0.25
+rho = 0
 # S, K, r, q, sig, t = 100, 100, 0.05, 0.02, 0.35, 1
-
-sec = EuropeanCall(asset=asset, strike=K, tenor=t)
-pde = BlackScholesPDE1D(asset=asset, spot=S, r=r, q=q, sig=sig)
-engine = FiniteDifferenceEngine(sec, pde, CrankNicolsonScheme())
-vals, xs = engine.price({'t': 100, asset: 600}, scale=5)
-ans = np.interp(S, xs, vals)
+eq1 = EquityFactor('AAPL', s1, q1, sig1)
+eq2 = EquityFactor('MSFT', s2, q2, sig2)
+sec = ExchangeOption(eq1, eq2, t)
+pde = BlackScholesPDE2D(eq1, eq2, r, rho)
+engine = FiniteDifferenceEngine(sec, pde, DouglasScheme())
+# profile = cProfile.run("vals, states = engine.price({'t': 100, 'AAPL': 100, 'MSFT': 100}, scale=5)", sort=2)
+# print(profile)
+vals, states = engine.price({'t': 20, 'AAPL': 300, 'MSFT': 300}, scale=5)
+f = interp2d(states['MSFT'], states['AAPL'], vals)
+ans = f(s2, s1)
 
 # mask = (xs > 200) & (xs < 300)
 # print(vals[mask])
 # print(ans.interp({asset: S}))
 print(ans)
-print(get_european_call_bs(S, K, r, q, sig, t))
+print(get_european_call_bs(s1, s2, 0, 0, np.sqrt(sig1 ** 2 + sig2 ** 2), t))
 # print([get_european_call_bs(x, K, r, q, sig, t) for x in xs[mask]])

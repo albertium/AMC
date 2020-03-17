@@ -4,10 +4,11 @@ import numpy as np
 from numpy.testing import assert_almost_equal, assert_allclose
 from scipy.sparse import diags
 
-from amc.security import HeatSecurity, EuropeanCall
+from amc.grid import GridSlice
+from amc.security import HeatSecurity, EuropeanCall, Security
 from amc.engine import FiniteDifferenceEngine, FiniteDifferenceScheme
 from amc.engine import ExplicitScheme, ImplicitScheme, CrankNicolsonScheme
-from amc.pde import HeatPDE, BlackScholesPDE1D
+from amc.pde import HeatPDE, BlackScholesPDE1D, PDE
 from amc.helper import get_european_call_bs
 
 
@@ -37,14 +38,25 @@ class TestLinearAlgebra(unittest.TestCase):
         inv = np.zeros(n + 2)
         ans = np.zeros(n + 2)
         ans[0], ans[-1] = b[0], b[-1]  # need to set the Dirichlet boundaries first
-        FiniteDifferenceScheme.forward_step(inv, b, a)
+
+        # Mock class to circumvent the abstract method failure
+        class Scheme(FiniteDifferenceScheme):
+
+            def step(self, curr: GridSlice, prev: GridSlice, pde: PDE, sec: Security) -> None:
+                pass
+
+        scheme = Scheme()
+        scheme.forward_step(inv, b, a)
         inv_saved = inv.copy()
-        FiniteDifferenceScheme.backward_step(ans, inv, a)
+        scheme.backward_step(ans, inv, a)
 
         assert_almost_equal(ans, expected, decimal=14)
         assert_almost_equal(a, a_saved, decimal=18)  # make sure a is not overwritten
         assert_almost_equal(b, expected, decimal=18)  # make sure b is not overwritten
         assert_almost_equal(inv, inv_saved, decimal=18)  # make sure inv is not overwritten in backward step
+
+
+class TestFiniteDifference(unittest.TestCase):
 
     def test_explicit_scheme(self):
         # explicit is not stable but the more steps you put, the more accuracy you get
@@ -95,7 +107,8 @@ class TestLinearAlgebra(unittest.TestCase):
         sec = EuropeanCall(asset=asset, strike=k, tenor=t)
         pde = BlackScholesPDE1D(asset=asset, spot=s, r=r, q=q, sig=sig)
         engine = FiniteDifferenceEngine(sec, pde, CrankNicolsonScheme())
-        ans, xs = engine.price({'t': m, asset: n}, scale=5)
+        ans, states = engine.price({'t': m, asset: n}, scale=5)
+        xs = states[asset]
         mask = (xs > k * 0.8) & (xs < k * 1.2)
         ans = ans[mask]
         xs = xs[mask]
