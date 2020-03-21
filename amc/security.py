@@ -247,12 +247,14 @@ class ExchangeOption(Security):
 
     def __init__(self, equity1: EquityFactor, equity2: EquityFactor, tenor):
         self.equities = [equity1.name, equity2.name]
-        x_lb = DirichletBoundary(equity1.name, Bound.LOWER, lambda gs: 0)
+        x_lb = DirichletBoundary(equity1.name, Bound.LOWER,
+                                 lambda gs: np.maximum(gs.state(equity1.name)[0] - gs.state(equity2.name), 0))
         x_ub = DirichletBoundary(equity1.name, Bound.UPPER,
-                                 lambda gs: gs.state(equity1.name)[-1] - gs.state(equity2.name))
+                                 lambda gs: np.maximum(gs.state(equity1.name)[-1] - gs.state(equity2.name), 0))
         y_lb = DirichletBoundary(equity2.name, Bound.LOWER,
-                                 lambda gs: gs.state(equity1.name) - gs.state(equity2.name)[0])
-        y_ub = DirichletBoundary(equity2.name, Bound.UPPER, lambda gs: 0)
+                                 lambda gs: np.maximum(gs.state(equity1.name) - gs.state(equity2.name)[0], 0))
+        y_ub = DirichletBoundary(equity2.name, Bound.UPPER,
+                                 lambda gs: np.maximum(gs.state(equity1.name) - gs.state(equity2.name)[-1], 0))
         super(ExchangeOption, self).__init__(tenor=tenor, factors=[equity1.name, equity2.name],
                                              boundaries=[x_lb, x_ub, y_lb, y_ub])
 

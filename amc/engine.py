@@ -216,6 +216,44 @@ class DouglasScheme(FiniteDifferenceScheme):
         self.nd_backward_step(curr.values, curr.values, ly)
 
 
+class HundsdorferVerwerScheme(FiniteDifferenceScheme):
+
+    def step(self, curr: GridSlice, prev: GridSlice, pde: PDE2D, sec: Security) -> None:
+        lx, ly, lxy = pde.differential_operator(curr.states)  # type: np.ndarray
+        lx, ly, lxy = curr.dt * lx, curr.dt * ly, curr.dt * lxy
+
+        # self.forward_step_cross(curr.values.T, prev.values.T, lxy)
+        self.nd_forward_step(curr.values.T, prev.values.T, lx)
+        self.nd_forward_step(curr.values, prev.values, ly)
+        curr.values[1: -1, 1: -1] += prev.values[1: -1, 1: -1]
+        y0 = curr.values.copy()
+
+        # ----- implicit step on Lx, Ly -----
+        lx *= 0.5
+        ly *= 0.5
+        lxy *= 0.5
+        lx_inv, ly_inv = -lx, -ly
+        lx_inv[1] += 1
+        ly_inv[1] += 1
+
+        self.nd_forward_step(curr.values.T, prev.values.T, lx, op_type=Op.MINUS)  # subtract half lx back
+        self.nd_backward_step(curr.values.T, curr.values.T, lx_inv)
+        self.nd_forward_step(curr.values, prev.values, ly, op_type=Op.MINUS)  # subtract half Ly back
+        self.nd_backward_step(curr.values, curr.values, ly_inv)
+
+        # HV step
+        diff = curr.values - prev.values
+        # self.forward_step_cross(diff.T, diff.T, lxy)
+        self.nd_forward_step(diff.T, diff.T, lx)
+        self.nd_forward_step(diff, diff, ly)
+        yb = y0 + diff
+
+        self.nd_forward_step(yb.T, curr.values.T, lx, op_type=Op.MINUS)  # subtract half lx back
+        self.nd_backward_step(yb.T, yb.T, lx_inv)
+        self.nd_forward_step(yb, curr.values, ly, op_type=Op.MINUS)  # subtract half Ly back
+        self.nd_backward_step(curr.values, yb, ly_inv)
+
+
 class FiniteDifferenceEngine(PricingEngine):
     """
     only price 1D PDE for now

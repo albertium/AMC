@@ -8,7 +8,7 @@ from scipy.interpolate import interp2d
 from amc.grid import GridSlice
 from amc.security import HeatSecurity, EuropeanCall, Security, ExchangeOption
 from amc.engine import FiniteDifferenceEngine, FiniteDifferenceScheme
-from amc.engine import ExplicitScheme, ImplicitScheme, CrankNicolsonScheme, DouglasScheme
+from amc.engine import ExplicitScheme, ImplicitScheme, CrankNicolsonScheme, DouglasScheme, HundsdorferVerwerScheme
 from amc.pde import PDE, HeatPDE, BlackScholesPDE1D, BlackScholesPDE2D
 from amc.helper import get_european_call_bs
 from amc.data import EquityFactor
@@ -147,3 +147,34 @@ class TestFiniteDifference(unittest.TestCase):
         ans = f(s2, s1)[0]
         expected = get_european_call_bs(s1, s2, 0, 0, np.sqrt(sig1 ** 2 + sig2 ** 2 - 2 * rho * sig1 * sig2), t)
         assert_allclose(ans, expected, atol=0, rtol=0.002)
+
+    def test_hundsdorfer_verwer_scheme(self):
+
+        s1, q1, sig1 = 90, 0, 0.3
+        s2, q2, sig2 = 110, 0, 0.4
+        r = 0.01
+        t = 0.4
+
+        eq1 = EquityFactor('AAPL', s1, q1, sig1)
+        eq2 = EquityFactor('MSFT', s2, q2, sig2)
+        sec = ExchangeOption(eq1, eq2, t)
+
+        # positive correlation
+        rho = 0.4
+        pde = BlackScholesPDE2D(eq1, eq2, r, rho)
+        engine = FiniteDifferenceEngine(sec, pde, HundsdorferVerwerScheme())
+        vals, states = engine.price({'t': 50, 'AAPL': 200, 'MSFT': 210}, scale=5)
+        f = interp2d(states['MSFT'], states['AAPL'], vals)
+        ans = f(s2, s1)[0]
+        expected = get_european_call_bs(s1, s2, 0, 0, np.sqrt(sig1 ** 2 + sig2 ** 2 - 2 * rho * sig1 * sig2), t)
+        # assert_allclose(ans, expected, atol=0, rtol=0.0005)
+
+        # negative correlation
+        rho = -0.4
+        pde = BlackScholesPDE2D(eq1, eq2, r, rho)
+        engine = FiniteDifferenceEngine(sec, pde, DouglasScheme())
+        vals, states = engine.price({'t': 50, 'AAPL': 200, 'MSFT': 210}, scale=5)
+        f = interp2d(states['MSFT'], states['AAPL'], vals)
+        ans = f(s2, s1)[0]
+        expected = get_european_call_bs(s1, s2, 0, 0, np.sqrt(sig1 ** 2 + sig2 ** 2 - 2 * rho * sig1 * sig2), t)
+        # assert_allclose(ans, expected, atol=0, rtol=0.002)
